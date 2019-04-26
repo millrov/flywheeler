@@ -15,6 +15,10 @@ const config = {
   type: Phaser.AUTO,
   width: constants.WIDTH,
   height: constants.HEIGHT,
+  scale: {
+    mode: Phaser.DOM.FIT,
+    autoCenter: Phaser.DOM.CENTER_BOTH
+  },
   // plugins: {
   //   scene: [
   //     {
@@ -36,7 +40,7 @@ const config = {
     GameScene
   ],
   pixelArt: true,
-  antialias: false,
+  antialias: true,
   callbacks: {
     postBoot: game => {
       game.renderer.addPipeline('Custom', new CustomPipeline(game));

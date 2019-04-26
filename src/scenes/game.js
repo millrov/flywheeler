@@ -1,47 +1,49 @@
-import Phaser from 'phaser';
-import flywheeltex from '../assets/egna/act_streetlight_flywheel.png';
-import knapptex from '../assets/egna/iphone-home-button.png';
-import woodchippertex from '../assets/egna/wood_carving_disk.png';
+import Phaser from "phaser";
+import flywheeltex from "../assets/egna/act_streetlight_flywheel.png";
+import knapptex from "../assets/egna/iphone-home-button.png";
+import woodchippertex from "../assets/egna/wood_carving_disk.png";
+import { get } from "http";
 
 export default class Game extends Phaser.Scene {
-  flywheelRpm = 20;
-  flywheelRotPos = 0.0;
-  flywheelFricton = 10;
-
-  woodchipperRpm = 0;
-  woodchipperRotPos = 0.0;
-
-  fuel = 100;
+  fuel = 1000;
 
   burnState = false;
   brakeState = false;
-  chutchState = false;
+  clutchState = false;
+  connectedFlywheels = [];
 
   constructor() {
-    super({ key: 'Game' });
+    super({ key: "Game" });
   }
 
   preload() {
-    this.load.image('flywheel', flywheeltex);
-    this.load.image('woodchipper', woodchippertex);
-    this.load.image('knapp', knapptex);
+    this.load.image("flywheel", flywheeltex);
+    this.load.image("woodchipper", woodchippertex);
+    this.load.image("knapp", knapptex);
   }
 
   create() {
-    this.burnButton = this.add.sprite(200, 250, 'knapp').setScale(0.1);
-    this.brakeButton = this.add.sprite(250, 250, 'knapp').setScale(0.1);
-    this.clutchButton = this.add.sprite(300, 250, 'knapp').setScale(0.1);
+    this.flywheels = this.add.group(
+      [
+        this.createFlywheel(100, 120, 0.2, "flywheel", 20, 0.0, 10, 100, 1000),
+        this.createFlywheel(350, 150, 0.05, "woodchipper", 5, 0.0, 10, 20, 500)
+      ]
+      //x,y,sc,tex,rpm,rot,fri,mass,eny
+    );
+    this.burnButton = this.add.sprite(100, 250, "knapp").setDisplaySize(30, 30);
+    this.brakeButton = this.add.sprite(200, 250, "knapp").setScale(0.1);
+    this.clutchButton = this.add.sprite(300, 250, "knapp").setScale(0.2);
 
     this.burnButton.setInteractive();
     this.burnButton.on(
-      'pointerdown',
+      "pointerdown",
       function() {
         this.burnState = true;
       },
       this
     );
     this.burnButton.on(
-      'pointerup',
+      "pointerup",
       function() {
         this.burnState = false;
       },
@@ -49,14 +51,14 @@ export default class Game extends Phaser.Scene {
     );
     this.brakeButton.setInteractive();
     this.brakeButton.on(
-      'pointerdown',
+      "pointerdown",
       function() {
         this.brakeState = true;
       },
       this
     );
     this.brakeButton.on(
-      'pointerup',
+      "pointerup",
       function() {
         this.brakeState = false;
       },
@@ -64,85 +66,139 @@ export default class Game extends Phaser.Scene {
     );
     this.clutchButton.setInteractive();
     this.clutchButton.on(
-      'pointerdown',
+      "pointerdown",
       function() {
-        this.clutch_state = true;
+        if (this.clutchState == false) {
+          enyDiff =
+            this.flywheels.getChildren()[0].getData("eny") -
+            this.flywheels.getChildren()[1].getData("eny");
+        }
+        this.tween = this.tweens.addCounter({
+          from: 0,
+          to: enyDiff,
+          duration: 2000
+        });
+       
+        this.clutchState = true;
       },
       this
     );
     this.clutchButton.on(
-      'pointerup',
+      "pointerup",
       function() {
-        this.clutch_state = false;
+        this.clutchState = false;
       },
       this
     );
 
-    this.knapptext = this.add.text(180, 225, 'ÖKA    Bromsa  Koppla');
-    this.instrumentering = this.add.text(
-      20,
-      20,
-      'RPM:' +
-        this.flywheelRpm +
-        ' Fuel:' +
-        this.fuel +
-        ' Chipper:' +
-        this.woodchipperRpm
-    );
-
-    this.flywheel = this.add.sprite(100, 120, 'flywheel').setScale(0.2);
-    this.woodchipper = this.add.sprite(350, 150, 'woodchipper').setScale(0.05);
+    //this.knapptext = this.add.text(180, 225, "Burn Brake Clutch");
+    this.instrumentering = this.add.text(20, 20, "");
   }
 
   update(time, delta) {
-    //setTimeout(1);
     if (this.burnState == true) {
-      this.burn();
+      this.burn(0);
     }
     if (this.brakeState == true) {
-      this.brake();
+      this.brake(0);
     }
-    if (this.clutch_state == true) {
+    if (this.clutchState == true) {
       this.clutch();
     }
-    this.flywheelRpm = this.flywheelRpm * 0.999;
-    //console.log(delta);
-    if (this.flywheelRpm < 0) {
-      this.flywheelRpm = 0;
+
+    const ch = this.flywheels.getChildren();
+
+    for (let i = 0; i < 2; i++) {
+      ch[i].setData(
+        "eny",
+        ch[i].getData("eny") * (1 - ch[i].getData("fri") / 100000)
+      );
+
+      ch[i].setData("rpm", ch[i].getData("eny") / ch[i].getData("mass"));
+
+      ch[i].setData(
+        "rot",
+        ch[i].getData("rot") + ch[i].getData("rpm") * delta * 0.01
+      );
+      ch[i].setAngle(ch[i].getData("rot"));
+
+      if (ch[i].getData("eny") < 0) {
+        ch[i].setData("eny", 0);
+      }
     }
 
-    this.flywheelRotPos += this.flywheelRpm * delta * 0.01;
-    this.flywheel.setAngle(this.flywheelRotPos);
-    this.woodchipperRotPos += this.woodchipperRpm * delta * 0.01;
-    this.woodchipper.setAngle(this.woodchipperRotPos);
-
     this.instrumentering.setText(
-      'RPM:' +
-        this.flywheelRpm.toFixed(0) +
-        ' Fuel:' +
+      "ENY:" +
+        ch[0].getData("eny").toFixed(0) +
+        " RPM:" +
+        ch[0].getData("rpm").toFixed(0) +
+        " Fuel:" +
         this.fuel.toFixed(0) +
-        ' Chipper:' +
-        this.woodchipperRpm.toFixed(0)
+        " CENY:" +
+        ch[1].getData("eny").toFixed(0) +
+        " CRPM:" +
+        ch[1].getData("rpm").toFixed(0)
     );
   }
 
-  burn() {
-    console.log('yola');
-    //this.instrumentering.setColor(0xFF0000);
+  burn(n) {
     if (this.fuel > 0.1) {
-      this.flywheelRpm += 1;
+      this.flywheels
+        .getChildren()
+        [n].setData("eny", this.flywheels.getChildren()[n].getData("eny") + 10);
       this.fuel -= 0.1;
     }
   }
 
-  brake() {
-    this.flywheelRpm -= 5;
+  brake(n) {
+    if (this.flywheels.getChildren()[n].getData("eny") > 0.1) {
+      this.flywheels
+        .getChildren()
+        [n].setData("eny", this.flywheels.getChildren()[n].getData("eny") - 25);
+    }
   }
 
   clutch() {
-    if (this.flywheelRpm > 1) {
-      this.flywheelRpm -= 1;
-      this.woodchipperRpm += 2;
-    }
+    /*     const fly1 = this.flywheels.getChildren()[0];
+    const fly2 = this.flywheels.getChildren()[1];
+    this.connect(
+      fly1,
+      fly2
+    ); */
+    this.energyLeveling(this.tween.getValue());
+  }
+
+  createFlywheel(x, y, sc, tex, rpm, rot, fri, mass, eny) {
+    const flywheel = this.add.sprite(x, y, tex).setScale(sc);
+    flywheel.setData("rpm", rpm);
+    flywheel.setData("rot", rot);
+    flywheel.setData("fri", fri);
+    flywheel.setData("mass", mass);
+    flywheel.setData("eny", eny);
+    return flywheel;
+  }
+
+  connect(fly1, fly2) {
+    this.connectedFlywheels = [fly1, fly2];
+  }
+
+  energyLeveling(procent) {
+
+    let halva =
+      (this.flywheels.getChildren()[0].getData("eny") +
+        this.flywheels.getChildren()[1].getData("eny")) /
+      2;
+
+    this.flywheels.getChildren()[0].setData("eny", halva);
+    this.flywheels.getChildren()[1].setData("eny", halva);
+
+    //return halva;
+
+    //if (this.connectedFlywheels.length<1) {return 0};
+    //console.log("energyLeveling");
+
+    //return this.connectedFlywheels.reduce((total, fly) => {
+    // return total + fly.getData("eny");
+    //});
   }
 }
